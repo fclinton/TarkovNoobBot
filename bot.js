@@ -52,25 +52,41 @@ async function updateGSheet(){
     sheet = doc.sheetsByIndex[0];    
     var properties = Object.getOwnPropertyNames(lastTarkovData[0]);
     await sheet.resize({rowCount:lastTarkovData.length,columnCount:properties.length})
-    await sheet.setHeaderRow(properties);
+    //await sheet.setHeaderRow(properties);
     const rows = await sheet.getRows();
     var i,j,temparray,chunk = 100;
     console.log(`Processing ${lastTarkovData.length} rows`)
     var clonedArray= lastTarkovData.slice(0) 
-    lastTarkovData.forEach(item=>{
+    var countChanges = 0;
+
+
+    await lastTarkovData.reduce(async (memo, item) => {
+        await memo;
         var filterSheet = rows.filter(x=>x.uid==item.uid);
         if(filterSheet.length==0){
             
-        }else{
+        }else{            
+            countChanges++;
             clonedArray = clonedArray.filter(cloneditem=>item.uid!=cloneditem.uid);
             var itemUpdate = new Date(item.updated); 
             var rowUpdate = new Date(filterSheet[0].updated); 
             if(rowUpdate<itemUpdate){
                 var saveObj = Object.assign(filterSheet[0],item);
-                saveObj.save();
-            }
+                try{
+                await saveObj.save();
+                }catch{}
+                await sleep(250);
+            }            
         }
+    }, undefined)
+
+    
+
+    lastTarkovData.forEach(async item=>{
+                
     })
+    sheet.saveUpdatedCells();
+    console.log(`Updated ${countChanges} rows`)
     console.log(`New ${clonedArray.length} rows`)
     var i,j,temparray,chunk = 100;
     for (i=0,j=clonedArray.length; i<j; i+=chunk) {
@@ -83,6 +99,16 @@ async function updateGSheet(){
 }
 
 
+function compareitems(a, b) {
+    if (a.profit < b.profit) return 1;
+    if (b.profit < a.profit) return -1;
+  
+    return 0;
+  }
+
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
 class TarkovBot{
     constructor(){
         botObj=this;
@@ -115,6 +141,7 @@ class TarkovBot{
     async processMessage(msg) {
         await Promise.resolve();
         if(msg.content=="tkv prime market"){
+            updateGSheet();
             msg.reply("https://docs.google.com/spreadsheets/d/1F-jidFF89GzmVcS17R3gbZz7YiEvhNA6eHa1lnaxC1c");
         }        
     }
@@ -144,24 +171,34 @@ class TarkovBot{
 
         res.on("end", function () {
             var body = Buffer.concat(chunks);
+            
             var itemarray = JSON.parse(body);            
             try{            
             itemarray.forEach((item)=>{
                 item.priceinroubles = normalizeTraderPrice(item);
                 item.profit = (item.priceinroubles-item.price);
             })
-            lastTarkovData=itemarray;
-      
+            lastTarkovData=itemarray.sort(compareitems);
             
+            
+            var minTime = 90000000000;
+                    itemarray.forEach(item=>{
+                        var utcTime = new Date(new Date().toUTCString());
+                        var itemUpdateTime = new Date(item.updated);
+                        var currentDiff = parseInt((utcTime - itemUpdateTime));
+                        if(currentDiff<minTime){
+                            minTime=currentDiff;
+                        }
+                    })  
+                    console.log(`updated mintime:${minTime}`);
             itemarray.forEach((item)=>{
                 try {
-                    var utcTime = new Date(new Date().toUTCString());
-                    var itemUpdateTime = new Date(item.updated);                                        
-                    if(item.profit>0 && parseInt((utcTime - itemUpdateTime))< 21000) {                        
+                    
+                                                 
+                    if(item.profit>0 && parseInt((utcTime - itemUpdateTime))< 300000) {                        
                         var sendScreen = generateNotificationText(item);
                         console.log(sendScreen);
-                        sendDiscordMessage(sendScreen);
-                        
+                        sendDiscordMessage(sendScreen);                        
                     }   
                 } catch (error) {
                     
